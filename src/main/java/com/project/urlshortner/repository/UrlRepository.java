@@ -2,10 +2,19 @@ package com.project.urlshortner.repository;
 
 import com.project.urlshortner.model.Url;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
 
 
 @Repository
 public interface UrlRepository extends JpaRepository<Url,Long> {
-    public Url findByShortLink(String shortLink);
+     Optional<Url> findByShortLink(String shortLink);
+
+    @Modifying
+    @Query("UPDATE Url u SET u.clickCount = u.clickCount + 1 WHERE u.shortLink = :shortLink")
+    void incrementClickCount(@Param("shortLink") String shortLink);
 }

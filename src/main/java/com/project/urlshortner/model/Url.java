@@ -1,10 +1,8 @@
 package com.project.urlshortner.model;
 
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
+
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -22,12 +20,12 @@ public class Url {
     @Id
     @GeneratedValue
     private long id;
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String originalUrl;
+    @Column(unique = true)
     private String shortLink;
     private LocalDateTime createdTime;
     private LocalDateTime expirationTime;
-
-
+    private Long clickCount = 0L;
 
 }

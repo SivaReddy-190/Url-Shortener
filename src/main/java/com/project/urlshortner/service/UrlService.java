@@ -4,6 +4,7 @@ import com.google.common.hash.Hashing;
 import com.project.urlshortner.model.Url;
 import com.project.urlshortner.model.UrlDto;
 import com.project.urlshortner.repository.UrlRepository;
+import jakarta.transaction.Transactional;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -26,7 +27,7 @@ public class UrlService {
             urlToPersist.setOriginalUrl(urlDto.getUrl());
             urlToPersist.setCreatedTime(LocalDateTime.now());
             urlToPersist.setExpirationTime(getExpirationTime(urlDto.getExpirationDate(),urlToPersist.getCreatedTime()));
-            Url urlToRet = persistshortLink(urlToPersist);
+            Url urlToRet = persistShortLink(urlToPersist);
 
             if(urlToRet!=null) return urlToRet;
             return null;
@@ -37,10 +38,9 @@ public class UrlService {
     }
 
     private LocalDateTime getExpirationTime(String expirationDate, LocalDateTime createdTime) {
-        if(StringUtils.isBlank(expirationDate)) return  createdTime.plusSeconds(60);
+        if(StringUtils.isBlank(expirationDate)) return  createdTime.plusDays(60);
 
-        LocalDateTime expirationDateToRet = LocalDateTime.parse(expirationDate);
-        return expirationDateToRet;
+        return LocalDateTime.parse(expirationDate);
     }
 
     private String encodeUrl(String url) {
@@ -50,13 +50,16 @@ public class UrlService {
         return encodedUrl;
     }
 
-    public Url persistshortLink(Url url) {
-        Url urlToRet = repository.save(url);
-        return urlToRet;
+    public Url persistShortLink(Url url) {
+        return repository.save(url);
     }
 
-    public Url getEncodecUrl(String url) {
-        return repository.findByShortLink(url);
+    @Transactional
+    public Url getEncodedUrl(String shortLink) {
+
+        repository.incrementClickCount(shortLink);
+
+        return repository.findByShortLink(shortLink).orElseThrow(() -> new RuntimeException("Not Found"));
     }
 
     public void deleteShortLink(Url url) {

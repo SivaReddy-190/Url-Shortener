@@ -33,13 +33,13 @@ public class UrlShortnerController {
             urlResponseDto.setOriginalUrl(urlToRet.getOriginalUrl());
             urlResponseDto.setExpirationDate(urlToRet.getExpirationTime());
             urlResponseDto.setShortLink(urlToRet.getShortLink());
-            return new ResponseEntity<UrlResponseDto>(urlResponseDto, HttpStatus.OK);
+            return new ResponseEntity<>(urlResponseDto, HttpStatus.OK);
         }
 
         UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
         urlErrorResponseDto.setStatus("404");
         urlErrorResponseDto.setError("Error while processing your request, please try again");
-        return new ResponseEntity<UrlErrorResponseDto>(urlErrorResponseDto,HttpStatus.OK);
+        return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.OK);
 
     }
 
@@ -50,15 +50,15 @@ public class UrlShortnerController {
             UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
             urlErrorResponseDto.setStatus("404");
             urlErrorResponseDto.setStatus("Invalid Url");
-            return new ResponseEntity<UrlErrorResponseDto>(urlErrorResponseDto,HttpStatus.OK);
+            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.OK);
         }
-        Url urlToRet = service.getEncodecUrl(shortLink);
+        Url urlToRet = service.getEncodedUrl(shortLink);
 
         if(urlToRet==null) {
             UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
             urlErrorResponseDto.setStatus("404");
             urlErrorResponseDto.setStatus("Url doesn't exist or might have been expired");
-            return new ResponseEntity<UrlErrorResponseDto>(urlErrorResponseDto,HttpStatus.OK);
+            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.OK);
         }
 
         if(urlToRet.getExpirationTime().isBefore(LocalDateTime.now())) {
@@ -66,7 +66,7 @@ public class UrlShortnerController {
             UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
             urlErrorResponseDto.setStatus("200");
             urlErrorResponseDto.setStatus("Url expired");
-            return new ResponseEntity<UrlErrorResponseDto>(urlErrorResponseDto,HttpStatus.OK);
+            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.OK);
         }
 
         response.sendRedirect(urlToRet.getOriginalUrl());
