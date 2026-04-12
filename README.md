@@ -11,7 +11,7 @@ A simple Spring Boot-based URL Shortener that converts long URLs into short, sha
 - Maven
 - Lombok
 - Guava
-- H2 Database
+- Postgresql db
 
 ---
 
@@ -30,7 +30,10 @@ A simple Spring Boot-based URL Shortener that converts long URLs into short, sha
 
 - `GET /{shortLink}`  
   Redirect to the original long URL using the short link.
-
+- `GET /stats/{shortLink}`
+  Shows click_count
+- `DELETE/{shortLink}`
+  Deletes shortLink and original url
 ---
 
 ## How to Run the Project
