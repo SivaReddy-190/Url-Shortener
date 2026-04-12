@@ -57,9 +57,16 @@ public class UrlService {
     @Transactional
     public Url getEncodedUrl(String shortLink) {
 
-        repository.incrementClickCount(shortLink);
+        Url url = repository.findByShortLink(shortLink)
+                .orElse(null);
+        if(url != null) {
+            repository.incrementClickCount(shortLink);
+        }
+        return url;
+    }
 
-        return repository.findByShortLink(shortLink).orElseThrow(() -> new RuntimeException("Not Found"));
+    public Url getOriginalUrl(String shortLink) {
+        return repository.findByShortLink(shortLink).orElse(null);
     }
 
     public void deleteShortLink(Url url) {
