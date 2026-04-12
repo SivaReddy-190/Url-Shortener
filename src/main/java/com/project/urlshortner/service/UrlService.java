@@ -21,32 +21,42 @@ public class UrlService {
     public Url generateShortLink(UrlDto urlDto) {
 
         if(StringUtils.isNotEmpty(urlDto.getUrl())) {
-            String encodeUrl = encodeUrl(urlDto.getUrl());
+            String shortLink;
+            if (StringUtils.isNotBlank(urlDto.getShortLink())) {
+                shortLink = urlDto.getShortLink();
+                if (repository.findByShortLink(shortLink).isPresent()) {
+                    throw new IllegalArgumentException("shortLink is taken, enter another");
+                }
+            } else {
+                shortLink = generateUniqueShortLink(urlDto.getUrl());
+            }
+
             Url urlToPersist = new Url();
-            urlToPersist.setShortLink(encodeUrl);
+            urlToPersist.setShortLink(shortLink);
             urlToPersist.setOriginalUrl(urlDto.getUrl());
             urlToPersist.setCreatedTime(LocalDateTime.now());
-            urlToPersist.setExpirationTime(getExpirationTime(urlDto.getExpirationDate(),urlToPersist.getCreatedTime()));
-            Url urlToRet = persistShortLink(urlToPersist);
-
-            if(urlToRet!=null) return urlToRet;
-            return null;
+            urlToPersist.setExpirationTime(getExpirationTime(urlDto.getExpirationDays(), urlToPersist.getCreatedTime()));
+            return persistShortLink(urlToPersist);
         }
         return null;
-
-
     }
 
-    private LocalDateTime getExpirationTime(String expirationDate, LocalDateTime createdTime) {
-        if(StringUtils.isBlank(expirationDate)) return  createdTime.plusDays(60);
+    private LocalDateTime getExpirationTime(Integer expirationDays, LocalDateTime createdTime) {
+        if(expirationDays == null || expirationDays <= 0) return createdTime.plusDays(60);
 
-        return LocalDateTime.parse(expirationDate);
+        return createdTime.plusDays(expirationDays);
     }
 
-    private String encodeUrl(String url) {
-        String encodedUrl = "";
-        LocalDateTime time = LocalDateTime.now();
-        encodedUrl = Hashing.murmur3_32_fixed().hashString(time.toString(), StandardCharsets.UTF_8).toString();
+    private String generateUniqueShortLink(String url) {
+        String encodedUrl;
+        int attempts = 0;
+        do {
+            LocalDateTime time = LocalDateTime.now();
+            encodedUrl = Hashing.murmur3_32_fixed()
+                    .hashString(url + time.toString() + attempts, StandardCharsets.UTF_8)
+                    .toString();
+            attempts++;
+        } while (repository.findByShortLink(encodedUrl).isPresent() && attempts < 5);
         return encodedUrl;
     }
 
@@ -57,8 +67,8 @@ public class UrlService {
     @Transactional
     public Url getEncodedUrl(String shortLink) {
 
-        Url url = repository.findByShortLink(shortLink)
-                .orElse(null);
+        Url url = repository.findByShortLink(shortLink).orElse(null);
+        
         if(url != null) {
             repository.incrementClickCount(shortLink);
         }

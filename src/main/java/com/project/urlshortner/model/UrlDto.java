@@ -5,8 +5,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
-
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -14,5 +12,6 @@ import java.time.LocalDateTime;
 public class UrlDto {
 
     private String url;
-    private String expirationDate;
+    private Integer expirationDays;
+    private String shortLink;
 }

@@ -26,20 +26,27 @@ public class UrlShortnerController {
 
     @PostMapping("/generate")
     public ResponseEntity<?> generateShortLink(@RequestBody UrlDto urlDto) {
-        Url urlToRet = service.generateShortLink(urlDto);
+        try {
+            Url urlToRet = service.generateShortLink(urlDto);
 
-        if (urlToRet != null) {
-            UrlResponseDto urlResponseDto = new UrlResponseDto();
-            urlResponseDto.setOriginalUrl(urlToRet.getOriginalUrl());
-            urlResponseDto.setExpirationDate(urlToRet.getExpirationTime());
-            urlResponseDto.setShortLink(urlToRet.getShortLink());
-            return new ResponseEntity<>(urlResponseDto, HttpStatus.OK);
+            if (urlToRet != null) {
+                UrlResponseDto urlResponseDto = new UrlResponseDto();
+                urlResponseDto.setOriginalUrl(urlToRet.getOriginalUrl());
+                urlResponseDto.setExpirationDate(urlToRet.getExpirationTime());
+                urlResponseDto.setShortLink(urlToRet.getShortLink());
+                return new ResponseEntity<>(urlResponseDto, HttpStatus.OK);
+            }
+
+            UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
+            urlErrorResponseDto.setStatus("404");
+            urlErrorResponseDto.setError("Error while processing your request, please try again");
+            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.OK);
+        } catch (IllegalArgumentException e) {
+            UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
+            urlErrorResponseDto.setStatus("400");
+            urlErrorResponseDto.setError(e.getMessage());
+            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.BAD_REQUEST);
         }
-
-        UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
-        urlErrorResponseDto.setStatus("404");
-        urlErrorResponseDto.setError("Error while processing your request, please try again");
-        return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.OK);
 
     }
 
@@ -50,7 +57,7 @@ public class UrlShortnerController {
             UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
             urlErrorResponseDto.setStatus("404");
             urlErrorResponseDto.setError("Invalid Url");
-            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.OK);
+            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.BAD_REQUEST);
         }
         Url urlToRet = service.getEncodedUrl(shortLink);
 
@@ -58,7 +65,7 @@ public class UrlShortnerController {
             UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
             urlErrorResponseDto.setStatus("404");
             urlErrorResponseDto.setError("Url doesn't exist or might have been expired");
-            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.OK);
+            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.NOT_FOUND);
         }
 
         if (urlToRet.getExpirationTime().isBefore(LocalDateTime.now())) {
@@ -66,11 +73,11 @@ public class UrlShortnerController {
             UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
             urlErrorResponseDto.setStatus("200");
             urlErrorResponseDto.setError("Url expired");
-            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.OK);
+            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.GONE);
         }
 
         response.sendRedirect(urlToRet.getOriginalUrl());
-        return null;
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping("/stats/{shortLink}")
