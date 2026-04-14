@@ -1,4 +1,4 @@
-package com.project.urlshortner.model;
+package com.project.urlshortener.model;
 
 import lombok.*;
 
@@ -12,5 +12,5 @@ public class UrlResponseDto {
 
     private String originalUrl;
     private String shortLink;
-    private LocalDateTime expirationDate;
+    private LocalDateTime expirationTime;
 }

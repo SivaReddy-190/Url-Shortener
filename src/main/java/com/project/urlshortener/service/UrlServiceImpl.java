@@ -1,23 +1,25 @@
-package com.project.urlshortner.service;
+package com.project.urlshortener.service;
 
 import com.google.common.hash.Hashing;
-import com.project.urlshortner.model.Url;
-import com.project.urlshortner.model.UrlDto;
-import com.project.urlshortner.repository.UrlRepository;
+import com.project.urlshortener.model.Url;
+import com.project.urlshortener.model.UrlDto;
+import com.project.urlshortener.repository.UrlRepository;
+
 import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 
+@RequiredArgsConstructor
 @Service
-public class UrlService {
+public class UrlServiceImpl implements UrlService {
 
-    @Autowired
-    private UrlRepository repository;
+    private final UrlRepository repository;
 
+    @Override
     public Url generateShortLink(UrlDto urlDto) {
 
         if(StringUtils.isNotEmpty(urlDto.getUrl())) {
@@ -60,10 +62,12 @@ public class UrlService {
         return encodedUrl;
     }
 
+    @Override
     public Url persistShortLink(Url url) {
         return repository.save(url);
     }
 
+    @Override
     @Transactional
     public Url getEncodedUrl(String shortLink) {
 
@@ -75,10 +79,12 @@ public class UrlService {
         return url;
     }
 
+    @Override
     public Url getOriginalUrl(String shortLink) {
         return repository.findByShortLink(shortLink).orElse(null);
     }
 
+    @Override
     public void deleteShortLink(Url url) {
         repository.delete(url);
     }

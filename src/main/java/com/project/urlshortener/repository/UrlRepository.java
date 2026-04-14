@@ -1,12 +1,15 @@
-package com.project.urlshortner.repository;
+package com.project.urlshortener.repository;
 
-import com.project.urlshortner.model.Url;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import jakarta.transaction.Transactional;
 
+import com.project.urlshortener.model.Url;
+
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 
@@ -17,4 +20,9 @@ public interface UrlRepository extends JpaRepository<Url,Long> {
     @Modifying
     @Query("UPDATE Url u SET u.clickCount = u.clickCount + 1 WHERE u.shortLink = :shortLink")
     void incrementClickCount(@Param("shortLink") String shortLink);
+
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM Url u WHERE u.expirationTime < :time")
+    int deleteByExpirationTimeBefore(@Param("time") LocalDateTime time);
 }

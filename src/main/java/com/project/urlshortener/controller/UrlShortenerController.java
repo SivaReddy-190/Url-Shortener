@@ -1,27 +1,26 @@
-package com.project.urlshortner.controller;
-import com.project.urlshortner.model.Url;
-import com.project.urlshortner.model.UrlDto;
-import com.project.urlshortner.model.UrlErrorResponseDto;
-import com.project.urlshortner.model.UrlResponseDto;
-
-import com.project.urlshortner.service.UrlService;
+package com.project.urlshortener.controller;
 import jakarta.servlet.http.HttpServletResponse;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.project.urlshortener.model.Url;
+import com.project.urlshortener.model.UrlDto;
+import com.project.urlshortener.model.UrlErrorResponseDto;
+import com.project.urlshortener.model.UrlResponseDto;
+import com.project.urlshortener.service.UrlServiceImpl;
+
+import lombok.RequiredArgsConstructor;
 import java.io.IOException;
 import java.time.LocalDateTime;
 
-
+@RequiredArgsConstructor
 @RestController
-public class UrlShortnerController {
+public class UrlShortenerController {
 
-    @Autowired
-    private UrlService service;
+    private final UrlServiceImpl service;
 
 
     @PostMapping("/generate")
@@ -32,7 +31,7 @@ public class UrlShortnerController {
             if (urlToRet != null) {
                 UrlResponseDto urlResponseDto = new UrlResponseDto();
                 urlResponseDto.setOriginalUrl(urlToRet.getOriginalUrl());
-                urlResponseDto.setExpirationDate(urlToRet.getExpirationTime());
+                urlResponseDto.setExpirationTime(urlToRet.getExpirationTime());
                 urlResponseDto.setShortLink(urlToRet.getShortLink());
                 return new ResponseEntity<>(urlResponseDto, HttpStatus.OK);
             }

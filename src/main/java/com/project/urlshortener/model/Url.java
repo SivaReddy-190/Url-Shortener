@@ -1,4 +1,4 @@
-package com.project.urlshortner.model;
+package com.project.urlshortener.model;
 
 
 
@@ -15,17 +15,18 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
+@Table(indexes = @Index(name = "idx_short_link", columnList = "shortLink"))
 public class Url {
 
     @Id
     @GeneratedValue
-    private long id;
+    private Long id;
     @Column(columnDefinition = "TEXT")
     private String originalUrl;
     @Column(unique = true)
     private String shortLink;
     private LocalDateTime createdTime;
     private LocalDateTime expirationTime;
-    private Long clickCount = 0L;
+    private Long clickCount;
 
 }
