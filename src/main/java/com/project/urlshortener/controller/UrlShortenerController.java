@@ -1,121 +1,55 @@
 package com.project.urlshortener.controller;
-import jakarta.servlet.http.HttpServletResponse;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.http.HttpStatus;
 
+import com.project.urlshortener.dto.UrlDto;
+import com.project.urlshortener.dto.UrlResponseDto;
+import com.project.urlshortener.model.Url;
+import com.project.urlshortener.service.UrlService;
+
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import com.project.urlshortener.model.Url;
-import com.project.urlshortener.model.UrlDto;
-import com.project.urlshortener.model.UrlErrorResponseDto;
-import com.project.urlshortener.model.UrlResponseDto;
-import com.project.urlshortener.service.UrlServiceImpl;
-
-import lombok.RequiredArgsConstructor;
-import java.io.IOException;
-import java.time.LocalDateTime;
+import java.net.URI;
+import java.util.Map;
 
 @RequiredArgsConstructor
 @RestController
 public class UrlShortenerController {
 
-    private final UrlServiceImpl service;
-
+    private final UrlService service;
 
     @PostMapping("/generate")
-    public ResponseEntity<?> generateShortLink(@RequestBody UrlDto urlDto) {
-        try {
-            Url urlToRet = service.generateShortLink(urlDto);
-
-            if (urlToRet != null) {
-                UrlResponseDto urlResponseDto = new UrlResponseDto();
-                urlResponseDto.setOriginalUrl(urlToRet.getOriginalUrl());
-                urlResponseDto.setExpirationTime(urlToRet.getExpirationTime());
-                urlResponseDto.setShortLink(urlToRet.getShortLink());
-                return new ResponseEntity<>(urlResponseDto, HttpStatus.OK);
-            }
-
-            UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
-            urlErrorResponseDto.setStatus("404");
-            urlErrorResponseDto.setError("Error while processing your request, please try again");
-            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.OK);
-        } catch (IllegalArgumentException e) {
-            UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
-            urlErrorResponseDto.setStatus("400");
-            urlErrorResponseDto.setError(e.getMessage());
-            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.BAD_REQUEST);
-        }
-
+    public ResponseEntity<UrlResponseDto> generateShortLink(@Valid @RequestBody UrlDto urlDto) {
+        Url url = service.generateShortLink(urlDto);
+        UrlResponseDto response = new UrlResponseDto(
+                url.getOriginalUrl(),
+                url.getShortLink(),
+                url.getExpirationTime()
+        );
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/{shortLink}")
-    public ResponseEntity<?> redirectToOriginalUrl(@PathVariable String shortLink, HttpServletResponse response) throws IOException {
+    public ResponseEntity<Void> redirectToOriginalUrl(@PathVariable String shortLink) {
+        Url url = service.getEncodedUrl(shortLink);
 
-        if(StringUtils.isEmpty(shortLink)) {
-            UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
-            urlErrorResponseDto.setStatus("404");
-            urlErrorResponseDto.setError("Invalid Url");
-            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.BAD_REQUEST);
-        }
-        Url urlToRet = service.getEncodedUrl(shortLink);
-
-        if (urlToRet == null) {
-            UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
-            urlErrorResponseDto.setStatus("404");
-            urlErrorResponseDto.setError("Url doesn't exist or might have been expired");
-            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.NOT_FOUND);
-        }
-
-        if (urlToRet.getExpirationTime().isBefore(LocalDateTime.now())) {
-            service.deleteShortLink(urlToRet);
-            UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
-            urlErrorResponseDto.setStatus("200");
-            urlErrorResponseDto.setError("Url expired");
-            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.GONE);
-        }
-
-        response.sendRedirect(urlToRet.getOriginalUrl());
-        return ResponseEntity.ok().build();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setLocation(URI.create(url.getOriginalUrl()));
+        return new ResponseEntity<>(headers, HttpStatus.FOUND);
     }
 
     @GetMapping("/stats/{shortLink}")
-    public ResponseEntity<?> getStats(@PathVariable String shortLink) {
-        if (StringUtils.isEmpty(shortLink)) {
-            UrlErrorResponseDto error = new UrlErrorResponseDto("400", "Invalid Url format");
-            return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
-        }
-
+    public ResponseEntity<Map<String, Long>> getStats(@PathVariable String shortLink) {
         Url url = service.getOriginalUrl(shortLink);
-        if (url == null) {
-            UrlErrorResponseDto error = new UrlErrorResponseDto("404", "Url doesn't exist");
-            return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
-        }
-
-        return new ResponseEntity<>(url.getClickCount(), HttpStatus.OK);
-
+        return ResponseEntity.ok(Map.of("clickCount", url.getClickCount()));
     }
 
     @DeleteMapping("/{shortLink}")
-    public ResponseEntity<?> deleteShortLink(@PathVariable String shortLink) {
-        if (StringUtils.isEmpty(shortLink)) {
-            UrlErrorResponseDto error = new UrlErrorResponseDto("400", "Invalid Url request");
-            return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
-        }
-        Url urlToRet = service.getOriginalUrl(shortLink);
-
-        if (urlToRet == null) {
-            UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
-            urlErrorResponseDto.setStatus("404");
-            urlErrorResponseDto.setError("Url doesn't exist or might have been expired");
-            return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.NOT_FOUND);
-        }
-
-        service.deleteShortLink(urlToRet);
-        UrlErrorResponseDto urlErrorResponseDto = new UrlErrorResponseDto();
-        urlErrorResponseDto.setStatus("200");
-        urlErrorResponseDto.setError("Url Deleted successfully");
-        return new ResponseEntity<>(urlErrorResponseDto, HttpStatus.OK);
+    public ResponseEntity<Map<String, String>> deleteShortLink(@PathVariable String shortLink) {
+        service.deleteShortLink(shortLink);
+        return ResponseEntity.ok(Map.of("message", "URL deleted successfully"));
     }
-
 }

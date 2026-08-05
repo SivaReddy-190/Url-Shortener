@@ -1,92 +1,99 @@
-package com.project.urlshortener.service;
+package com.project.urlshortener.service.impl;
 
-import com.google.common.hash.Hashing;
+import com.project.urlshortener.dto.UrlDto;
+import com.project.urlshortener.exception.ShortLinkCollisionException;
+import com.project.urlshortener.exception.UrlExpiredException;
+import com.project.urlshortener.exception.UrlNotFoundException;
 import com.project.urlshortener.model.Url;
-import com.project.urlshortener.model.UrlDto;
 import com.project.urlshortener.repository.UrlRepository;
+import com.project.urlshortener.service.UrlService;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @RequiredArgsConstructor
 @Service
 public class UrlServiceImpl implements UrlService {
 
+    private static final int DEFAULT_EXPIRATION_DAYS = 60;
+    private static final int MAX_COLLISION_RETRIES = 5;
+    private static final int SHORT_LINK_LENGTH = 8;
+
     private final UrlRepository repository;
 
     @Override
     public Url generateShortLink(UrlDto urlDto) {
+        String shortLink;
 
-        if(StringUtils.isNotEmpty(urlDto.getUrl())) {
-            String shortLink;
-            if (StringUtils.isNotBlank(urlDto.getShortLink())) {
-                shortLink = urlDto.getShortLink();
-                if (repository.findByShortLink(shortLink).isPresent()) {
-                    throw new IllegalArgumentException("shortLink is taken, enter another");
-                }
-            } else {
-                shortLink = generateUniqueShortLink(urlDto.getUrl());
+        if (urlDto.shortLink() != null && !urlDto.shortLink().isBlank()) {
+            shortLink = urlDto.shortLink();
+            if (repository.findByShortLink(shortLink).isPresent()) {
+                throw new IllegalArgumentException("Short link '" + shortLink + "' is already taken, choose another");
             }
-
-            Url urlToPersist = new Url();
-            urlToPersist.setShortLink(shortLink);
-            urlToPersist.setOriginalUrl(urlDto.getUrl());
-            urlToPersist.setCreatedTime(LocalDateTime.now());
-            urlToPersist.setExpirationTime(getExpirationTime(urlDto.getExpirationDays(), urlToPersist.getCreatedTime()));
-            return persistShortLink(urlToPersist);
+        } else {
+            shortLink = generateUniqueShortLink();
         }
-        return null;
-    }
 
-    private LocalDateTime getExpirationTime(Integer expirationDays, LocalDateTime createdTime) {
-        if(expirationDays == null || expirationDays <= 0) return createdTime.plusDays(60);
+        LocalDateTime now = LocalDateTime.now();
+        Url urlToPersist = Url.builder()
+                .shortLink(shortLink)
+                .originalUrl(urlDto.url())
+                .createdTime(now)
+                .expirationTime(getExpirationTime(urlDto.expirationDays(), now))
+                .clickCount(0L)
+                .build();
 
-        return createdTime.plusDays(expirationDays);
-    }
-
-    private String generateUniqueShortLink(String url) {
-        String encodedUrl;
-        int attempts = 0;
-        do {
-            LocalDateTime time = LocalDateTime.now();
-            encodedUrl = Hashing.murmur3_32_fixed()
-                    .hashString(url + time.toString() + attempts, StandardCharsets.UTF_8)
-                    .toString();
-            attempts++;
-        } while (repository.findByShortLink(encodedUrl).isPresent() && attempts < 5);
-        return encodedUrl;
-    }
-
-    @Override
-    public Url persistShortLink(Url url) {
-        return repository.save(url);
+        return repository.save(urlToPersist);
     }
 
     @Override
     @Transactional
     public Url getEncodedUrl(String shortLink) {
+        Url url = repository.findByShortLink(shortLink)
+                .orElseThrow(() -> new UrlNotFoundException("URL not found for short link: " + shortLink));
 
-        Url url = repository.findByShortLink(shortLink).orElse(null);
-        
-        if(url != null) {
-            repository.incrementClickCount(shortLink);
+        if (url.getExpirationTime().isBefore(LocalDateTime.now())) {
+            repository.delete(url);
+            throw new UrlExpiredException("Short link '" + shortLink + "' has expired");
         }
+
+        repository.incrementClickCount(shortLink);
         return url;
     }
 
     @Override
     public Url getOriginalUrl(String shortLink) {
-        return repository.findByShortLink(shortLink).orElse(null);
+        return repository.findByShortLink(shortLink)
+                .orElseThrow(() -> new UrlNotFoundException("URL not found for short link: " + shortLink));
     }
 
     @Override
-    public void deleteShortLink(Url url) {
+    public void deleteShortLink(String shortLink) {
+        Url url = repository.findByShortLink(shortLink)
+                .orElseThrow(() -> new UrlNotFoundException("URL not found for short link: " + shortLink));
         repository.delete(url);
     }
 
+    private LocalDateTime getExpirationTime(Integer expirationDays, LocalDateTime createdTime) {
+        if (expirationDays == null || expirationDays <= 0) {
+            return createdTime.plusDays(DEFAULT_EXPIRATION_DAYS);
+        }
+        return createdTime.plusDays(expirationDays);
+    }
+
+    private String generateUniqueShortLink() {
+        for (int attempt = 0; attempt < MAX_COLLISION_RETRIES; attempt++) {
+            String shortLink = UUID.randomUUID().toString().replace("-", "")
+                    .substring(0, SHORT_LINK_LENGTH);
+            if (repository.findByShortLink(shortLink).isEmpty()) {
+                return shortLink;
+            }
+        }
+        throw new ShortLinkCollisionException(
+                "Failed to generate a unique short link after " + MAX_COLLISION_RETRIES + " attempts");
+    }
 }

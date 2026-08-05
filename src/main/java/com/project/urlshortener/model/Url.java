@@ -19,7 +19,7 @@ import java.time.LocalDateTime;
 public class Url {
 
     @Id
-    @GeneratedValue
+    @GeneratedValue(strategy = GenerationType.SEQUENCE)
     private Long id;
     @Column(columnDefinition = "TEXT")
     private String originalUrl;
@@ -27,6 +27,7 @@ public class Url {
     private String shortLink;
     private LocalDateTime createdTime;
     private LocalDateTime expirationTime;
-    private Long clickCount;
+    @Builder.Default
+    private Long clickCount = 0L;
 
 }
