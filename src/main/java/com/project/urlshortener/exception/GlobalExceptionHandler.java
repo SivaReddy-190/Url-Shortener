@@ -1,6 +1,6 @@
 package com.project.urlshortener.exception;
 
-import com.project.urlshortener.dto.UrlErrorResponseDto;
+import com.project.urlshortener.dto.url.UrlErrorResponseDto;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -42,5 +42,24 @@ public class GlobalExceptionHandler {
                 .orElse("Validation failed");
         return ResponseEntity.badRequest()
                 .body(new UrlErrorResponseDto("400", message));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<UrlErrorResponseDto> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new UrlErrorResponseDto("403", ex.getMessage()));
+    }
+
+    @ExceptionHandler(org.springframework.security.authentication.BadCredentialsException.class)
+    public ResponseEntity<UrlErrorResponseDto> handleBadCredentials(
+            org.springframework.security.authentication.BadCredentialsException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(new UrlErrorResponseDto("401", "Invalid username or password"));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<UrlErrorResponseDto> handleUnexpected(Exception ex) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new UrlErrorResponseDto("500", "An unexpected error occurred"));
     }
 }

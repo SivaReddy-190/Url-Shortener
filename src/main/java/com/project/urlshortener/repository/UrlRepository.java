@@ -7,17 +7,26 @@ import org.springframework.data.repository.query.Param;
 import jakarta.transaction.Transactional;
 
 import com.project.urlshortener.model.Url;
+import com.project.urlshortener.model.User;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 
 public interface UrlRepository extends JpaRepository<Url, Long> {
     Optional<Url> findByShortLink(String shortLink);
 
+    List<Url> findByUser(User user);
+
     @Modifying
     @Query("UPDATE Url u SET u.clickCount = u.clickCount + 1 WHERE u.shortLink = :shortLink")
     void incrementClickCount(@Param("shortLink") String shortLink);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE Url u SET u.clickCount = u.clickCount + :delta WHERE u.shortLink = :shortLink")
+    void incrementClickCountByDelta(@Param("shortLink") String shortLink, @Param("delta") long delta);
 
     @Modifying
     @Transactional

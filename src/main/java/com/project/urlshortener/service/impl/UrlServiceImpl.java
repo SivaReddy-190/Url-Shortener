@@ -1,18 +1,20 @@
 package com.project.urlshortener.service.impl;
 
-import com.project.urlshortener.dto.UrlDto;
+import com.project.urlshortener.dto.url.UrlDto;
+import com.project.urlshortener.exception.AccessDeniedException;
 import com.project.urlshortener.exception.ShortLinkCollisionException;
 import com.project.urlshortener.exception.UrlExpiredException;
 import com.project.urlshortener.exception.UrlNotFoundException;
 import com.project.urlshortener.model.Url;
+import com.project.urlshortener.model.User;
 import com.project.urlshortener.repository.UrlRepository;
 import com.project.urlshortener.service.UrlService;
 
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @RequiredArgsConstructor
@@ -24,9 +26,10 @@ public class UrlServiceImpl implements UrlService {
     private static final int SHORT_LINK_LENGTH = 8;
 
     private final UrlRepository repository;
+    private final ClickCountBufferServiceImpl clickCountBufferServiceImpl;
 
     @Override
-    public Url generateShortLink(UrlDto urlDto) {
+    public Url generateShortLink(UrlDto urlDto, User user) {
         String shortLink;
 
         if (urlDto.shortLink() != null && !urlDto.shortLink().isBlank()) {
@@ -45,13 +48,13 @@ public class UrlServiceImpl implements UrlService {
                 .createdTime(now)
                 .expirationTime(getExpirationTime(urlDto.expirationDays(), now))
                 .clickCount(0L)
+                .user(user)
                 .build();
 
         return repository.save(urlToPersist);
     }
 
     @Override
-    @Transactional
     public Url getEncodedUrl(String shortLink) {
         Url url = repository.findByShortLink(shortLink)
                 .orElseThrow(() -> new UrlNotFoundException("URL not found for short link: " + shortLink));
@@ -61,21 +64,35 @@ public class UrlServiceImpl implements UrlService {
             throw new UrlExpiredException("Short link '" + shortLink + "' has expired");
         }
 
-        repository.incrementClickCount(shortLink);
+        clickCountBufferServiceImpl.increment(shortLink);
         return url;
     }
 
     @Override
-    public Url getOriginalUrl(String shortLink) {
-        return repository.findByShortLink(shortLink)
+    public Url getOriginalUrl(String shortLink, User user) {
+        Url url = repository.findByShortLink(shortLink)
                 .orElseThrow(() -> new UrlNotFoundException("URL not found for short link: " + shortLink));
+        verifyOwnership(url, user);
+        return url;
     }
 
     @Override
-    public void deleteShortLink(String shortLink) {
+    public void deleteShortLink(String shortLink, User user) {
         Url url = repository.findByShortLink(shortLink)
                 .orElseThrow(() -> new UrlNotFoundException("URL not found for short link: " + shortLink));
+        verifyOwnership(url, user);
         repository.delete(url);
+    }
+
+    @Override
+    public List<Url> getUserLinks(User user) {
+        return repository.findByUser(user);
+    }
+
+    private void verifyOwnership(Url url, User user) {
+        if (url.getUser() == null || !url.getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You do not own this link");
+        }
     }
 
     private LocalDateTime getExpirationTime(Integer expirationDays, LocalDateTime createdTime) {

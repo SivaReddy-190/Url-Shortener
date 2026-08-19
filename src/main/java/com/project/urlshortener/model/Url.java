@@ -3,15 +3,15 @@ package com.project.urlshortener.model;
 
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
 @Entity
-@Data
+@Getter
+@Setter
+@ToString(exclude = "user")
+@EqualsAndHashCode(exclude = "user")
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
@@ -29,5 +29,9 @@ public class Url {
     private LocalDateTime expirationTime;
     @Builder.Default
     private Long clickCount = 0L;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
 
 }
