@@ -1,4 +1,4 @@
-package com.project.urlshortener.dto;
+package com.project.urlshortener.dto.url;
 
 import java.time.LocalDateTime;
 
