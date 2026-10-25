@@ -19,6 +19,8 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
 
     List<Url> findByUser(User user);
 
+    List<Url> findByExpirationTimeBefore(LocalDateTime time);
+
     @Modifying
     @Query("UPDATE Url u SET u.clickCount = u.clickCount + 1 WHERE u.shortLink = :shortLink")
     void incrementClickCount(@Param("shortLink") String shortLink);

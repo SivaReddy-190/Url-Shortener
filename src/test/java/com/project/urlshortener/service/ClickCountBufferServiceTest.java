@@ -8,9 +8,19 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.data.redis.core.ValueOperations;
+
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -20,11 +30,34 @@ class ClickCountBufferServiceTest {
     @Mock
     private UrlRepository urlRepository;
 
+    @Mock
+    private RedisTemplate<String, String> redisTemplate;
+
+    @Mock
+    private ValueOperations<String, String> valueOperations;
+
+    @Mock
+    private Cursor<String> cursor;
+
     private ClickCountBufferServiceImpl bufferService;
 
     @BeforeEach
     void setUp() {
-        bufferService = new ClickCountBufferServiceImpl(urlRepository);
+        bufferService = spy(new ClickCountBufferServiceImpl(urlRepository, redisTemplate));
+    }
+
+    /** Helper: configure the mock cursor to return the given keys */
+    private void mockScanKeys(String... keys) {
+        when(redisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
+        Iterator<String> iterator = List.of(keys).iterator();
+        when(cursor.hasNext()).thenAnswer(inv -> iterator.hasNext());
+        when(cursor.next()).thenAnswer(inv -> iterator.next());
+    }
+
+    /** Helper: configure an empty scan result */
+    private void mockScanEmpty() {
+        when(redisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(false);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -35,30 +68,59 @@ class ClickCountBufferServiceTest {
     class Increment {
 
         @Test
-        @DisplayName("Should accumulate clicks for the same short link")
-        void shouldAccumulateClicks() {
-            bufferService.increment("abc123");
-            bufferService.increment("abc123");
+        @DisplayName("Should call Redis INCR for the click counter key")
+        void shouldCallRedisIncrement() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
             bufferService.increment("abc123");
 
-            assertThat(bufferService.getBufferedCount("abc123")).isEqualTo(3);
+            verify(valueOperations).increment("url:clicks:abc123");
         }
 
         @Test
-        @DisplayName("Should track clicks independently per short link")
-        void shouldTrackClicksPerShortLink() {
-            bufferService.increment("link-a");
+        @DisplayName("Should call Redis INCR for different short links independently")
+        void shouldIncrementDifferentKeysIndependently() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
             bufferService.increment("link-a");
             bufferService.increment("link-b");
 
-            assertThat(bufferService.getBufferedCount("link-a")).isEqualTo(2);
-            assertThat(bufferService.getBufferedCount("link-b")).isEqualTo(1);
+            verify(valueOperations).increment("url:clicks:link-a");
+            verify(valueOperations).increment("url:clicks:link-b");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // getBufferedCount()
+    // ─────────────────────────────────────────────────────────────
+    @Nested
+    @DisplayName("getBufferedCount()")
+    class GetBufferedCount {
+
+        @Test
+        @DisplayName("Should return the Redis counter value")
+        void shouldReturnRedisValue() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get("url:clicks:abc123")).thenReturn("5");
+
+            assertThat(bufferService.getBufferedCount("abc123")).isEqualTo(5);
         }
 
         @Test
-        @DisplayName("Should return zero for non-existent short link")
+        @DisplayName("Should return zero when key does not exist")
         void shouldReturnZeroForNonExistent() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get("url:clicks:unknown")).thenReturn(null);
+
             assertThat(bufferService.getBufferedCount("unknown")).isEqualTo(0);
+        }
+
+        @Test
+        @DisplayName("Should return zero when Redis throws exception")
+        void shouldReturnZeroOnRedisError() {
+            when(redisTemplate.opsForValue()).thenThrow(new RuntimeException("Redis down"));
+
+            assertThat(bufferService.getBufferedCount("abc123")).isEqualTo(0);
         }
     }
 
@@ -70,66 +132,57 @@ class ClickCountBufferServiceTest {
     class FlushToDatabase {
 
         @Test
-        @DisplayName("Should call incrementClickCountByDelta with accumulated delta")
-        void shouldFlushAccumulatedClicks() {
-            bufferService.increment("abc123");
-            bufferService.increment("abc123");
-            bufferService.increment("abc123");
-
-            bufferService.flushToDatabase();
-
-            verify(urlRepository).incrementClickCountByDelta("abc123", 3);
-        }
-
-        @Test
-        @DisplayName("Should flush multiple short links in a single flush cycle")
-        void shouldFlushMultipleShortLinks() {
-            bufferService.increment("link-a");
-            bufferService.increment("link-a");
-            bufferService.increment("link-b");
-            bufferService.increment("link-c");
-            bufferService.increment("link-c");
-            bufferService.increment("link-c");
-
-            bufferService.flushToDatabase();
-
-            verify(urlRepository).incrementClickCountByDelta("link-a", 2);
-            verify(urlRepository).incrementClickCountByDelta("link-b", 1);
-            verify(urlRepository).incrementClickCountByDelta("link-c", 3);
-        }
-
-        @Test
-        @DisplayName("Should clear buffer after successful flush")
-        void shouldClearBufferAfterFlush() {
-            bufferService.increment("abc123");
-            bufferService.increment("abc123");
-
-            bufferService.flushToDatabase();
-
-            assertThat(bufferService.getBufferedCount("abc123")).isEqualTo(0);
-        }
-
-        @Test
-        @DisplayName("Should not call repository when buffer is empty")
+        @DisplayName("Should not call repository when no click keys exist in Redis")
         void shouldNotCallRepositoryWhenEmpty() {
+            mockScanEmpty();
+
             bufferService.flushToDatabase();
 
             verifyNoInteractions(urlRepository);
         }
 
         @Test
-        @DisplayName("Should re-queue clicks on DB failure")
-        void shouldReQueueOnFailure() {
-            bufferService.increment("abc123");
-            bufferService.increment("abc123");
-
-            doThrow(new RuntimeException("DB down"))
-                    .when(urlRepository).incrementClickCountByDelta("abc123", 2);
+        @DisplayName("Should flush click counts from Redis to database via Lua script")
+        void shouldFlushClicksToDatabase() {
+            mockScanKeys("url:clicks:abc123");
+            when(redisTemplate.execute(any(), eq(Collections.singletonList("url:clicks:abc123"))))
+                    .thenReturn("3");
+            doNothing().when(bufferService).flushSingleKey("abc123", 3);
 
             bufferService.flushToDatabase();
 
-            // Clicks should be re-queued for the next flush attempt
-            assertThat(bufferService.getBufferedCount("abc123")).isEqualTo(2);
+            verify(bufferService).flushSingleKey("abc123", 3);
+        }
+
+        @Test
+        @DisplayName("Should flush multiple short links in a single cycle")
+        void shouldFlushMultipleKeys() {
+            mockScanKeys("url:clicks:link-a", "url:clicks:link-b");
+            when(redisTemplate.execute(any(), eq(Collections.singletonList("url:clicks:link-a"))))
+                    .thenReturn("2");
+            when(redisTemplate.execute(any(), eq(Collections.singletonList("url:clicks:link-b"))))
+                    .thenReturn("5");
+            doNothing().when(bufferService).flushSingleKey(anyString(), anyLong());
+
+            bufferService.flushToDatabase();
+
+            verify(bufferService).flushSingleKey("link-a", 2);
+            verify(bufferService).flushSingleKey("link-b", 5);
+        }
+
+        @Test
+        @DisplayName("Should re-add delta to Redis when DB write fails (data loss fix)")
+        void shouldRequeueDeltaOnDbFailure() {
+            mockScanKeys("url:clicks:abc123");
+            when(redisTemplate.execute(any(), eq(Collections.singletonList("url:clicks:abc123"))))
+                    .thenReturn("7");
+            doThrow(new RuntimeException("DB unavailable")).when(bufferService).flushSingleKey("abc123", 7);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+            bufferService.flushToDatabase();
+
+            // Verify the original delta (7) is restored, not 0
+            verify(valueOperations).increment("url:clicks:abc123", 7L);
         }
     }
 
@@ -143,13 +196,15 @@ class ClickCountBufferServiceTest {
         @Test
         @DisplayName("Should flush remaining clicks on shutdown")
         void shouldFlushOnShutdown() {
-            bufferService.increment("abc123");
-            bufferService.increment("abc123");
+            mockScanKeys("url:clicks:abc123");
+            when(redisTemplate.execute(any(), eq(Collections.singletonList("url:clicks:abc123"))))
+                    .thenReturn("2");
+            doNothing().when(bufferService).flushSingleKey("abc123", 2);
 
             bufferService.shutdown();
 
-            verify(urlRepository).incrementClickCountByDelta("abc123", 2);
-            assertThat(bufferService.getBufferedCount("abc123")).isEqualTo(0);
+            verify(bufferService).flushSingleKey("abc123", 2);
         }
     }
 }
+

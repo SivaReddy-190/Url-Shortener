@@ -13,7 +13,7 @@ import java.util.List;
 @Getter
 @Setter
 @ToString(exclude = "urls")
-@EqualsAndHashCode(exclude = "urls")
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
@@ -22,6 +22,7 @@ public class User implements UserDetails {
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE)
+    @EqualsAndHashCode.Include
     private Long id;
 
     @Column(unique = true, nullable = false)

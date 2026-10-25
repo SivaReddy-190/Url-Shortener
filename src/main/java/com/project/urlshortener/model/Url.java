@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @ToString(exclude = "user")
-@EqualsAndHashCode(exclude = "user")
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
@@ -20,6 +20,7 @@ public class Url {
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE)
+    @EqualsAndHashCode.Include
     private Long id;
     @Column(columnDefinition = "TEXT")
     private String originalUrl;

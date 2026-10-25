@@ -8,15 +8,22 @@ import com.project.urlshortener.exception.UrlNotFoundException;
 import com.project.urlshortener.model.Url;
 import com.project.urlshortener.model.User;
 import com.project.urlshortener.repository.UrlRepository;
+import com.project.urlshortener.service.ClickCountBufferService;
+import com.project.urlshortener.service.UrlCacheService;
 import com.project.urlshortener.service.UrlService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.net.InetAddress;
+import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @RequiredArgsConstructor
 @Service
 public class UrlServiceImpl implements UrlService {
@@ -25,11 +32,22 @@ public class UrlServiceImpl implements UrlService {
     private static final int MAX_COLLISION_RETRIES = 5;
     private static final int SHORT_LINK_LENGTH = 8;
 
+    /** Hosts that must never be shortened (cloud metadata, localhost, etc.) */
+    private static final List<String> BLOCKED_HOSTS = List.of(
+            "169.254.169.254",          // AWS/GCP metadata
+            "metadata.google.internal", // GCP metadata
+            "metadata.internal"         // generic cloud metadata
+    );
+
     private final UrlRepository repository;
-    private final ClickCountBufferServiceImpl clickCountBufferServiceImpl;
+    private final ClickCountBufferService clickCountBufferService;
+    private final UrlCacheService urlCacheService;
 
     @Override
     public Url generateShortLink(UrlDto urlDto, User user) {
+        // Defense-in-depth: validate URL scheme and host (DTO @Pattern is the first layer)
+        validateUrl(urlDto.url());
+
         String shortLink;
 
         if (urlDto.shortLink() != null && !urlDto.shortLink().isBlank()) {
@@ -51,20 +69,35 @@ public class UrlServiceImpl implements UrlService {
                 .user(user)
                 .build();
 
-        return repository.save(urlToPersist);
+        Url saved = repository.save(urlToPersist);
+
+        // Cache the newly created URL entity in Redis
+        urlCacheService.cacheUrl(saved);
+
+        return saved;
     }
 
+    @Transactional
     @Override
     public Url getEncodedUrl(String shortLink) {
-        Url url = repository.findByShortLink(shortLink)
-                .orElseThrow(() -> new UrlNotFoundException("URL not found for short link: " + shortLink));
+        // Check Redis cache first, fall back to PostgreSQL on miss
+        Url url = urlCacheService.getCachedUrl(shortLink)
+                .orElseGet(() -> {
+                    Url fromDb = repository.findByShortLink(shortLink)
+                            .orElseThrow(() -> new UrlNotFoundException("URL not found for short link: " + shortLink));
+                    // Cache the entity for subsequent requests
+                    urlCacheService.cacheUrl(fromDb);
+                    return fromDb;
+                });
 
         if (url.getExpirationTime().isBefore(LocalDateTime.now())) {
             repository.delete(url);
+            urlCacheService.evict(shortLink);
             throw new UrlExpiredException("Short link '" + shortLink + "' has expired");
         }
 
-        clickCountBufferServiceImpl.increment(shortLink);
+        // Atomic increment in Redis — survives JVM crashes
+        clickCountBufferService.increment(shortLink);
         return url;
     }
 
@@ -73,6 +106,11 @@ public class UrlServiceImpl implements UrlService {
         Url url = repository.findByShortLink(shortLink)
                 .orElseThrow(() -> new UrlNotFoundException("URL not found for short link: " + shortLink));
         verifyOwnership(url, user);
+
+        // Add unflushed Redis buffer to provide real-time accurate stats
+        long bufferedClicks = clickCountBufferService.getBufferedCount(shortLink);
+        url.setClickCount(url.getClickCount() + bufferedClicks);
+
         return url;
     }
 
@@ -81,6 +119,10 @@ public class UrlServiceImpl implements UrlService {
         Url url = repository.findByShortLink(shortLink)
                 .orElseThrow(() -> new UrlNotFoundException("URL not found for short link: " + shortLink));
         verifyOwnership(url, user);
+
+        // Clean up Redis: evict cached entity and remove click counter
+        urlCacheService.evict(shortLink);
+
         repository.delete(url);
     }
 
@@ -113,4 +155,45 @@ public class UrlServiceImpl implements UrlService {
         throw new ShortLinkCollisionException(
                 "Failed to generate a unique short link after " + MAX_COLLISION_RETRIES + " attempts");
     }
+
+    /**
+     * Validates that the URL uses a safe scheme (http/https) and does not point to
+     * internal/private network addresses (SSRF prevention) or cloud metadata endpoints.
+     */
+    private void validateUrl(String url) {
+        URI uri;
+        try {
+            uri = URI.create(url);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid URL format");
+        }
+
+        String scheme = uri.getScheme();
+        if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
+            throw new IllegalArgumentException("Only http and https URLs are allowed");
+        }
+
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) {
+            throw new IllegalArgumentException("URL must have a valid host");
+        }
+
+        // Block known cloud metadata endpoints
+        if (BLOCKED_HOSTS.contains(host.toLowerCase())) {
+            throw new IllegalArgumentException("This URL is not allowed");
+        }
+
+        // Block private, loopback, and link-local IP addresses (SSRF prevention)
+        try {
+            InetAddress addr = InetAddress.getByName(host);
+            if (addr.isLoopbackAddress() || addr.isLinkLocalAddress() || addr.isSiteLocalAddress()) {
+                throw new IllegalArgumentException("URLs pointing to private/internal networks are not allowed");
+            }
+        } catch (IllegalArgumentException e) {
+            throw e; // re-throw our own validation exceptions
+        } catch (Exception e) {
+            log.warn("Could not resolve host '{}' for SSRF check, allowing URL", host);
+        }
+    }
 }
+
