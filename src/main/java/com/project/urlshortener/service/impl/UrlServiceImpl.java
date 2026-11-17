@@ -127,6 +127,27 @@ public class UrlServiceImpl implements UrlService {
     }
 
     @Override
+    @Transactional
+    public Url extendExpiration(String shortLink, int additionalDays, User user) {
+        if (additionalDays <= 0) {
+            throw new IllegalArgumentException("Additional days must be greater than 0");
+        }
+        Url url = repository.findByShortLink(shortLink)
+                .orElseThrow(() -> new UrlNotFoundException("URL not found for short link: " + shortLink));
+        verifyOwnership(url, user);
+
+        LocalDateTime currentExpiry = url.getExpirationTime();
+        LocalDateTime base = (currentExpiry == null || currentExpiry.isBefore(LocalDateTime.now()))
+                ? LocalDateTime.now()
+                : currentExpiry;
+
+        url.setExpirationTime(base.plusDays(additionalDays));
+        urlCacheService.evict(shortLink);
+
+        return repository.save(url);
+    }
+
+    @Override
     public List<Url> getUserLinks(User user) {
         return repository.findByUser(user);
     }

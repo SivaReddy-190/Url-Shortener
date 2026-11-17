@@ -36,6 +36,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/{shortLink}").permitAll()
+                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html",
+                                "/v3/api-docs/**", "/v3/api-docs.yaml").permitAll()
                         // Only allow health and info endpoints publicly; all others require auth
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/actuator/**").authenticated()
@@ -52,7 +54,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         // Configure allowed origins for your frontend — update for production
         configuration.setAllowedOrigins(List.of("http://localhost:3000", "http://localhost:5173"));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);

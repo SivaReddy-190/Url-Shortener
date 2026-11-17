@@ -1,5 +1,6 @@
 package com.project.urlshortener.controller;
 
+import com.project.urlshortener.dto.url.ExtendExpiryRequest;
 import com.project.urlshortener.dto.url.UrlDto;
 import com.project.urlshortener.dto.url.UrlResponseDto;
 import com.project.urlshortener.model.Url;
@@ -49,6 +50,24 @@ public class UrlController {
             @AuthenticationPrincipal User user) {
         service.deleteShortLink(shortLink, user);
         return ResponseEntity.ok(Map.of("message", "URL deleted successfully"));
+    }
+
+    @PatchMapping(value = "/{shortLink}/extend-expiry")
+    public ResponseEntity<UrlResponseDto> extendExpiry(
+            @PathVariable String shortLink,
+            @RequestBody(required = false) ExtendExpiryRequest request,
+            @RequestParam(required = false) Integer days,
+            @AuthenticationPrincipal User user) {
+        int additionalDays = (request != null && request.days() != null)
+                ? request.days()
+                : (days != null ? days : 30);
+        Url url = service.extendExpiration(shortLink, additionalDays, user);
+        UrlResponseDto response = new UrlResponseDto(
+                url.getOriginalUrl(),
+                url.getShortLink(),
+                url.getExpirationTime()
+        );
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/my-links")

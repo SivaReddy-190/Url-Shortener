@@ -8,6 +8,8 @@ import com.project.urlshortener.exception.UrlNotFoundException;
 import com.project.urlshortener.model.Url;
 import com.project.urlshortener.model.User;
 import com.project.urlshortener.repository.UrlRepository;
+import com.project.urlshortener.service.ClickCountBufferService;
+import com.project.urlshortener.service.UrlCacheService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -36,7 +38,10 @@ class UrlServiceImplTest {
     private UrlRepository urlRepository;
 
     @Mock
-    private ClickCountBufferServiceImpl clickCountBufferServiceImpl;
+    private ClickCountBufferService clickCountBufferService;
+
+    @Mock
+    private UrlCacheService urlCacheService;
 
     @InjectMocks
     private UrlServiceImpl urlService;
@@ -208,17 +213,20 @@ class UrlServiceImplTest {
                     .user(testUser)
                     .build();
 
+            when(urlCacheService.getCachedUrl("abc12345")).thenReturn(Optional.empty());
             when(urlRepository.findByShortLink("abc12345")).thenReturn(Optional.of(url));
 
             Url result = urlService.getEncodedUrl("abc12345");
 
             assertThat(result.getOriginalUrl()).isEqualTo("https://example.com");
-            verify(clickCountBufferServiceImpl).increment("abc12345");
+            verify(urlCacheService).cacheUrl(url);
+            verify(clickCountBufferService).increment("abc12345");
         }
 
         @Test
         @DisplayName("Should throw UrlNotFoundException when short link does not exist")
         void shouldThrowWhenShortLinkNotFound() {
+            when(urlCacheService.getCachedUrl("unknown")).thenReturn(Optional.empty());
             when(urlRepository.findByShortLink("unknown")).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> urlService.getEncodedUrl("unknown"))
@@ -236,6 +244,7 @@ class UrlServiceImplTest {
                     .user(testUser)
                     .build();
 
+            when(urlCacheService.getCachedUrl("expired")).thenReturn(Optional.empty());
             when(urlRepository.findByShortLink("expired")).thenReturn(Optional.of(expiredUrl));
 
             assertThatThrownBy(() -> urlService.getEncodedUrl("expired"))
@@ -243,7 +252,8 @@ class UrlServiceImplTest {
                     .hasMessageContaining("expired");
 
             verify(urlRepository).delete(expiredUrl);
-            verify(clickCountBufferServiceImpl, never()).increment(any());
+            verify(urlCacheService).evict("expired");
+            verify(clickCountBufferService, never()).increment(any());
         }
     }
 
@@ -376,6 +386,60 @@ class UrlServiceImplTest {
             List<Url> result = urlService.getUserLinks(testUser);
 
             assertThat(result).isEmpty();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    @Nested
+    @DisplayName("extendExpiration()")
+    class ExtendExpiration {
+
+        @Test
+        @DisplayName("Should successfully extend expiration date")
+        void shouldExtendExpirationSuccessfully() {
+            LocalDateTime currentExpiry = LocalDateTime.now().plusDays(10);
+            Url url = Url.builder()
+                    .shortLink("ext123")
+                    .expirationTime(currentExpiry)
+                    .user(testUser)
+                    .build();
+
+            when(urlRepository.findByShortLink("ext123")).thenReturn(Optional.of(url));
+            when(urlRepository.save(any(Url.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+            Url result = urlService.extendExpiration("ext123", 30, testUser);
+
+            assertThat(result.getExpirationTime()).isAfter(currentExpiry);
+            verify(urlCacheService).evict("ext123");
+            verify(urlRepository).save(url);
+        }
+
+        @Test
+        @DisplayName("Should throw when URL not found")
+        void shouldThrowWhenNotFound() {
+            when(urlRepository.findByShortLink("missing")).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> urlService.extendExpiration("missing", 30, testUser))
+                    .isInstanceOf(UrlNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("Should throw when user does not own URL")
+        void shouldThrowWhenAccessDenied() {
+            User other = User.builder().id(999L).build();
+            Url url = Url.builder().shortLink("otherLink").user(other).build();
+
+            when(urlRepository.findByShortLink("otherLink")).thenReturn(Optional.of(url));
+
+            assertThatThrownBy(() -> urlService.extendExpiration("otherLink", 30, testUser))
+                    .isInstanceOf(AccessDeniedException.class);
+        }
+
+        @Test
+        @DisplayName("Should throw when additionalDays is invalid")
+        void shouldThrowWhenInvalidDays() {
+            assertThatThrownBy(() -> urlService.extendExpiration("link", 0, testUser))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 }

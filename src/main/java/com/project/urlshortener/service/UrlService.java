@@ -16,6 +16,8 @@ public interface UrlService {
 
     void deleteShortLink(String shortLink, User user);
 
+    Url extendExpiration(String shortLink, int additionalDays, User user);
+
     List<Url> getUserLinks(User user);
 
 }

@@ -204,4 +204,52 @@ class UrlControllerTest {
                     .andExpect(jsonPath("$[1].shortLink").value("xyz98765"));
         }
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // PATCH /api/v1/urls/{shortLink}/extend-expiry
+    // ─────────────────────────────────────────────────────────────
+    @Nested
+    @DisplayName("PATCH /api/v1/urls/{shortLink}/extend-expiry")
+    class ExtendExpiry {
+
+        @Test
+        @WithMockUser
+        @DisplayName("Should return 200 with updated expiration time via query param")
+        void shouldExtendExpirySuccessfully() throws Exception {
+            LocalDateTime newExpiry = LocalDateTime.now().plusDays(40);
+            Url updated = Url.builder()
+                    .shortLink("abc12345")
+                    .originalUrl("https://example.com/target")
+                    .expirationTime(newExpiry)
+                    .build();
+
+            when(urlService.extendExpiration(eq("abc12345"), eq(30), any())).thenReturn(updated);
+
+            mockMvc.perform(patch("/api/v1/urls/abc12345/extend-expiry?days=30"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.shortLink").value("abc12345"))
+                    .andExpect(jsonPath("$.expirationTime").isNotEmpty());
+        }
+
+        @Test
+        @WithMockUser
+        @DisplayName("Should return 200 with updated expiration time via JSON body")
+        void shouldExtendExpiryViaJsonBody() throws Exception {
+            LocalDateTime newExpiry = LocalDateTime.now().plusDays(60);
+            Url updated = Url.builder()
+                    .shortLink("abc12345")
+                    .originalUrl("https://example.com/target")
+                    .expirationTime(newExpiry)
+                    .build();
+
+            when(urlService.extendExpiration(eq("abc12345"), eq(60), any())).thenReturn(updated);
+
+            mockMvc.perform(patch("/api/v1/urls/abc12345/extend-expiry")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"days\": 60}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.shortLink").value("abc12345"))
+                    .andExpect(jsonPath("$.expirationTime").isNotEmpty());
+        }
+    }
 }
