@@ -25,8 +25,11 @@ public class UrlCleanupScheduler {
     public void cleanupExpiredUrls() {
         log.info("Starting cleanup of expired URLs");
         try {
+            // Capture once to avoid race condition between the find and delete queries
+            LocalDateTime now = LocalDateTime.now();
+
             // Find expired URLs first so we can evict their Redis cache entries
-            List<Url> expiredUrls = urlRepository.findByExpirationTimeBefore(LocalDateTime.now());
+            List<Url> expiredUrls = urlRepository.findByExpirationTimeBefore(now);
             if (expiredUrls.isEmpty()) {
                 log.info("Cleanup completed — no expired URLs found");
                 return;
@@ -41,8 +44,8 @@ public class UrlCleanupScheduler {
                 }
             }
 
-            // Delete expired URLs from database
-            int deletedCount = urlRepository.deleteByExpirationTimeBefore(LocalDateTime.now());
+            // Delete expired URLs from database using the same cutoff time
+            int deletedCount = urlRepository.deleteByExpirationTimeBefore(now);
             log.info("Cleanup completed — deleted {} expired URLs", deletedCount);
         } catch (Exception e) {
             log.error("Error while cleaning up expired URLs", e);

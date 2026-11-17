@@ -24,8 +24,11 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByUsername(request.username()) || userRepository.existsByEmail(request.email())) {
-            throw new IllegalArgumentException("Registration failed. Username or email is already in use.");
+        if (userRepository.existsByUsername(request.username())) {
+            throw new IllegalArgumentException("Username '" + request.username() + "' is already taken");
+        }
+        if (userRepository.existsByEmail(request.email())) {
+            throw new IllegalArgumentException("Email '" + request.email() + "' is already registered");
         }
 
         User user = User.builder()

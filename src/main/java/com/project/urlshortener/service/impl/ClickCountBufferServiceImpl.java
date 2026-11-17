@@ -1,7 +1,7 @@
 package com.project.urlshortener.service.impl;
 
-import com.project.urlshortener.repository.UrlRepository;
 import com.project.urlshortener.service.ClickCountBufferService;
+import com.project.urlshortener.service.ClickCountFlushService;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,7 +11,6 @@ import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -34,7 +33,7 @@ public class ClickCountBufferServiceImpl implements ClickCountBufferService {
             "if val then redis.call('DEL', KEYS[1]) end " +
             "return val";
 
-    private final UrlRepository urlRepository;
+    private final ClickCountFlushService clickCountFlushService;
     private final RedisTemplate<String, String> redisTemplate;
 
     /**
@@ -86,7 +85,8 @@ public class ClickCountBufferServiceImpl implements ClickCountBufferService {
 
                 delta = Long.parseLong(value);
                 if (delta > 0) {
-                    flushSingleKey(shortLink, delta);
+                    // Delegate to a separate bean so @Transactional is applied via Spring's AOP proxy
+                    clickCountFlushService.flushSingleKey(shortLink, delta);
                     flushedCount++;
                     totalClicks += delta;
                 }
@@ -108,14 +108,6 @@ public class ClickCountBufferServiceImpl implements ClickCountBufferService {
         if (flushedCount > 0) {
             log.info("Flushed {} click counters to database ({} total clicks)", flushedCount, totalClicks);
         }
-    }
-
-    /**
-     * Flush a single key's delta to the database within its own transaction.
-     */
-    @Transactional
-    public void flushSingleKey(String shortLink, long delta) {
-        urlRepository.incrementClickCountByDelta(shortLink, delta);
     }
 
     /**

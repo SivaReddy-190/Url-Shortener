@@ -39,25 +39,32 @@ class ClickCountBufferServiceTest {
     @Mock
     private Cursor<String> cursor;
 
-    private ClickCountBufferServiceImpl bufferService;
+    private ClickCountBufferService bufferService;
+
+    @Mock
+    private ClickCountFlushService flushService;
 
     @BeforeEach
     void setUp() {
-        bufferService = spy(new ClickCountBufferServiceImpl(urlRepository, redisTemplate));
+        bufferService = spy(new ClickCountBufferServiceImpl(flushService, redisTemplate));
     }
 
     /** Helper: configure the mock cursor to return the given keys */
     private void mockScanKeys(String... keys) {
         when(redisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
-        Iterator<String> iterator = List.of(keys).iterator();
-        when(cursor.hasNext()).thenAnswer(inv -> iterator.hasNext());
-        when(cursor.next()).thenAnswer(inv -> iterator.next());
+        doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            java.util.function.Consumer<String> action = inv.getArgument(0);
+            for (String key : keys) {
+                action.accept(key);
+            }
+            return null;
+        }).when(cursor).forEachRemaining(any());
     }
 
     /** Helper: configure an empty scan result */
     private void mockScanEmpty() {
         when(redisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
-        when(cursor.hasNext()).thenReturn(false);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -132,13 +139,13 @@ class ClickCountBufferServiceTest {
     class FlushToDatabase {
 
         @Test
-        @DisplayName("Should not call repository when no click keys exist in Redis")
-        void shouldNotCallRepositoryWhenEmpty() {
+        @DisplayName("Should not call flushService when no click keys exist in Redis")
+        void shouldNotCallFlushServiceWhenEmpty() {
             mockScanEmpty();
 
             bufferService.flushToDatabase();
 
-            verifyNoInteractions(urlRepository);
+            verifyNoInteractions(flushService);
         }
 
         @Test
@@ -147,11 +154,11 @@ class ClickCountBufferServiceTest {
             mockScanKeys("url:clicks:abc123");
             when(redisTemplate.execute(any(), eq(Collections.singletonList("url:clicks:abc123"))))
                     .thenReturn("3");
-            doNothing().when(bufferService).flushSingleKey("abc123", 3);
+            doNothing().when(flushService).flushSingleKey("abc123", 3);
 
             bufferService.flushToDatabase();
 
-            verify(bufferService).flushSingleKey("abc123", 3);
+            verify(flushService).flushSingleKey("abc123", 3);
         }
 
         @Test
@@ -162,12 +169,12 @@ class ClickCountBufferServiceTest {
                     .thenReturn("2");
             when(redisTemplate.execute(any(), eq(Collections.singletonList("url:clicks:link-b"))))
                     .thenReturn("5");
-            doNothing().when(bufferService).flushSingleKey(anyString(), anyLong());
+            doNothing().when(flushService).flushSingleKey(anyString(), anyLong());
 
             bufferService.flushToDatabase();
 
-            verify(bufferService).flushSingleKey("link-a", 2);
-            verify(bufferService).flushSingleKey("link-b", 5);
+            verify(flushService).flushSingleKey("link-a", 2);
+            verify(flushService).flushSingleKey("link-b", 5);
         }
 
         @Test
@@ -176,7 +183,7 @@ class ClickCountBufferServiceTest {
             mockScanKeys("url:clicks:abc123");
             when(redisTemplate.execute(any(), eq(Collections.singletonList("url:clicks:abc123"))))
                     .thenReturn("7");
-            doThrow(new RuntimeException("DB unavailable")).when(bufferService).flushSingleKey("abc123", 7);
+            doThrow(new RuntimeException("DB unavailable")).when(flushService).flushSingleKey("abc123", 7);
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
             bufferService.flushToDatabase();
@@ -199,11 +206,11 @@ class ClickCountBufferServiceTest {
             mockScanKeys("url:clicks:abc123");
             when(redisTemplate.execute(any(), eq(Collections.singletonList("url:clicks:abc123"))))
                     .thenReturn("2");
-            doNothing().when(bufferService).flushSingleKey("abc123", 2);
+            doNothing().when(flushService).flushSingleKey("abc123", 2);
 
             bufferService.shutdown();
 
-            verify(bufferService).flushSingleKey("abc123", 2);
+            verify(flushService).flushSingleKey("abc123", 2);
         }
     }
 }
