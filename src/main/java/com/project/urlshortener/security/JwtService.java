@@ -39,22 +39,42 @@ public class JwtService {
         if (secretKey.startsWith("default-dev-secret")) {
             throw new IllegalStateException(
                     "FATAL: jwt.secret is using the insecure default value. " +
-                    "Set a strong, Base64-encoded JWT_SECRET environment variable (min 256 bits).");
+                    "Set a strong JWT_SECRET environment variable (min 256 bits / 32 bytes).");
         }
+        byte[] keyBytes = decodeKeyBytes(secretKey);
+        log.info("JWT secret validation passed (key size: {} bits)", keyBytes.length * 8);
+    }
+
+    private byte[] decodeKeyBytes(String secret) {
+        // 1. Try standard Base64
         try {
-            byte[] keyBytes = Decoders.BASE64.decode(secretKey);
-            if (keyBytes.length < 32) {
-                throw new IllegalStateException(
-                        "FATAL: jwt.secret must be at least 256 bits (32 bytes) when Base64-decoded. " +
-                        "Current length: " + keyBytes.length + " bytes.");
+            byte[] decoded = Decoders.BASE64.decode(secret);
+            if (decoded != null && decoded.length >= 32) {
+                return decoded;
             }
-        } catch (IllegalStateException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IllegalStateException(
-                    "FATAL: jwt.secret must be a valid Base64-encoded string of at least 256 bits.", e);
+        } catch (Exception ignored) {
+            // Not standard Base64
         }
-        log.info("JWT secret validation passed");
+
+        // 2. Try URL-safe Base64 (supports '_' and '-')
+        try {
+            byte[] decoded = Decoders.BASE64URL.decode(secret);
+            if (decoded != null && decoded.length >= 32) {
+                return decoded;
+            }
+        } catch (Exception ignored) {
+            // Not Base64URL
+        }
+
+        // 3. Fallback: raw UTF-8 string if it is at least 32 characters (256 bits)
+        byte[] rawBytes = secret.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        if (rawBytes.length >= 32) {
+            return rawBytes;
+        }
+
+        throw new IllegalStateException(
+                "FATAL: jwt.secret must be at least 256 bits (32 bytes) when decoded, or a string of at least 32 characters. " +
+                "Current byte length: " + rawBytes.length);
     }
 
     public String generateToken(UserDetails userDetails) {
@@ -94,7 +114,7 @@ public class JwtService {
     }
 
     private SecretKey getSigningKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(secretKey);
+        byte[] keyBytes = decodeKeyBytes(secretKey);
         return Keys.hmacShaKeyFor(keyBytes);
     }
 }

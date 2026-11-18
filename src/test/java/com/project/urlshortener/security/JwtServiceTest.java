@@ -77,4 +77,28 @@ class JwtServiceTest {
 
         assertThat(isValid).isFalse();
     }
+
+    @Test
+    @DisplayName("Should accept URL-safe Base64 secret with underscore and hyphen")
+    void shouldAcceptUrlSafeBase64SecretWithUnderscore() {
+        JwtService service = new JwtService();
+        ReflectionTestUtils.setField(service, "secretKey", "wfGQlBlRrHXuu5sJxYcYUnLgP7TF4zTGYLst8WlTtII=");
+        ReflectionTestUtils.setField(service, "expirationMs", TEST_EXPIRATION_MS);
+
+        service.validateSecret();
+        String token = service.generateToken(testUser);
+        assertThat(service.isTokenValid(token, testUser)).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should accept plain-text secret of at least 32 characters with underscores")
+    void shouldAcceptPlainTextSecretOfAtLeast32Chars() {
+        JwtService service = new JwtService();
+        ReflectionTestUtils.setField(service, "secretKey", "my_very_long_secret_key_for_jwt_auth_1234567890");
+        ReflectionTestUtils.setField(service, "expirationMs", TEST_EXPIRATION_MS);
+
+        service.validateSecret();
+        String token = service.generateToken(testUser);
+        assertThat(service.isTokenValid(token, testUser)).isTrue();
+    }
 }
